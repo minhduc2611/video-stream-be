@@ -1,0 +1,67 @@
+[package]
+name = "video-stream-be"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework
+actix-web = "4.4"
+actix-cors = "0.6"
+actix-multipart = "0.6"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
+
+# Authentication & Security
+jsonwebtoken = "9.2"
+bcrypt = "0.15"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Environment variables
+dotenv = "0.15"
+
+# Logging
+env_logger = "0.10"
+log = "0.4"
+
+# File handling
+tempfile = "3.8"
+mime_guess = "2.0"
+
+# Google Cloud Storage
+google-cloud-storage = "0.25.0-preview5"
+
+# Video processing (simplified for now)
+# ffmpeg-next = "6.0"  # Commented out for easier setup
+
+# Rate limiting
+governor = "0.6"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Configuration
+config = "0.14"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Futures utilities
+futures-util = "0.3"
+
+# Random number generation
+rand = "0.8"
