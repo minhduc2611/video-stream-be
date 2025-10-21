@@ -1,0 +1,266 @@
+### Video Stream API Test Requests
+### Base URL: http://localhost:8080/api/v1
+
+### Variables
+@baseUrl = http://localhost:8090/api/v1
+@token = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIwNGVjOTRiOC0zNzMxLTRiZjYtYWZlYy1iMGIzZDhiMmUyOTUiLCJleHAiOjE3NjE2NTUxNjAsImlhdCI6MTc2MTA1MDM2MH0.KegYDmukLKv6_Wvx1YF7F6xnhGkxZtWYeXKyK6Rib1k
+
+### ===========================================
+### HEALTH CHECK
+### ===========================================
+
+### Health Check
+GET {{baseUrl}}/health
+
+### ===========================================
+### AUTHENTICATION ENDPOINTS
+### ===========================================
+
+### Register User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "username": "testuser 2",
+  "password": "password123"
+}
+
+### Login User
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "password123"
+}
+
+### Google Authentication
+POST {{baseUrl}}/auth/google
+Content-Type: application/json
+
+{
+  "token": "ya29.a0AfH6SMC..."
+}
+
+### Get Current User
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Logout User
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{token}}
+
+### ===========================================
+### VIDEO MANAGEMENT ENDPOINTS
+### ===========================================
+
+### List Videos (with pagination)
+GET {{baseUrl}}/videos?limit=10&offset=0
+Authorization: Bearer {{token}}
+
+### List Videos (page 2)
+GET {{baseUrl}}/videos?limit=10&offset=10
+Authorization: Bearer {{token}}
+
+### List Videos (custom pagination)
+GET {{baseUrl}}/videos?limit=5&offset=0
+Authorization: Bearer {{token}}
+
+### Get Video Details
+GET {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{token}}
+
+### Get Video Streaming Info
+GET {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000/stream
+Authorization: Bearer {{token}}
+
+### Serve HLS Master Playlist
+GET {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000/stream/playlist.m3u8
+Authorization: Bearer {{token}}
+
+### Serve HLS Segment File
+GET {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000/stream/segment_001.ts
+Authorization: Bearer {{token}}
+
+### Get Video Thumbnail
+GET {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000/thumbnail
+Authorization: Bearer {{token}}
+
+### Delete Video
+DELETE {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{token}}
+
+### ===========================================
+### VIDEO UPLOAD (Multipart Form Data)
+### ===========================================
+
+### Upload HLS Video Files
+POST {{baseUrl}}/videos
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="title"
+
+My Test Video
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="description"
+
+This is a test video upload with HLS files
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="files"; filename="playlist.m3u8"
+Content-Type: application/vnd.apple.mpegurl
+
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.0,
+segment_001.ts
+#EXTINF:10.0,
+segment_002.ts
+#EXT-X-ENDLIST
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="files"; filename="segment_001.ts"
+Content-Type: video/mp2t
+
+<binary data for segment_001.ts>
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="files"; filename="segment_002.ts"
+Content-Type: video/mp2t
+
+<binary data for segment_002.ts>
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### ===========================================
+### ERROR TESTING
+### ===========================================
+
+### Test Invalid Token
+GET {{baseUrl}}/videos
+Authorization: Bearer invalid_token_here
+
+### Test Missing Token
+GET {{baseUrl}}/videos
+
+### Test Invalid Video ID
+GET {{baseUrl}}/videos/invalid-uuid
+Authorization: Bearer {{token}}
+
+### Test Registration with Invalid Email
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "invalid-email",
+  "username": "testuser",
+  "password": "password123"
+}
+
+### Test Registration with Short Password
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "username": "testuser",
+  "password": "123"
+}
+
+### Test Login with Wrong Password
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "wrongpassword"
+}
+
+### ===========================================
+### RATE LIMITING TESTS
+### ===========================================
+
+### Test Rate Limiting (make multiple rapid requests)
+GET {{baseUrl}}/videos
+Authorization: Bearer {{token}}
+
+### ===========================================
+### COMPLETE WORKFLOW TEST
+### ===========================================
+
+### Step 1: Register a new user
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "workflow@example.com",
+  "username": "workflowuser",
+  "password": "workflowpass123"
+}
+
+### Step 2: Login to get token
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "workflow@example.com",
+  "password": "workflowpass123"
+}
+
+### Step 3: Get current user info
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Step 4: List videos (should be empty initially)
+GET {{baseUrl}}/videos
+Authorization: Bearer {{token}}
+
+### Step 5: Upload a video (replace with actual files)
+POST {{baseUrl}}/videos
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="title"
+
+Workflow Test Video
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="description"
+
+Testing complete workflow
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### Step 6: List videos again (should show uploaded video)
+GET {{baseUrl}}/videos
+Authorization: Bearer {{token}}
+
+### Step 7: Get video details (use video_id from step 5 response)
+GET {{baseUrl}}/videos/REPLACE_WITH_ACTUAL_VIDEO_ID
+Authorization: Bearer {{token}}
+
+### Step 8: Get streaming info
+GET {{baseUrl}}/videos/REPLACE_WITH_ACTUAL_VIDEO_ID/stream
+Authorization: Bearer {{token}}
+
+### Step 9: Clean up - delete the video
+DELETE {{baseUrl}}/videos/REPLACE_WITH_ACTUAL_VIDEO_ID
+Authorization: Bearer {{token}}
+
+### Step 10: Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{token}}
+
+### ===========================================
+### NOTES
+### ===========================================
+
+### Instructions:
+### 1. Replace {{token}} with actual JWT token from login response
+### 2. Replace video IDs with actual UUIDs from API responses
+### 3. For file uploads, replace binary data placeholders with actual file content
+### 4. Use VS Code REST Client extension to execute these requests
+### 5. Set up environment variables for easier token management:
+###    - Create a .env file or use VS Code settings
+###    - Set @token = your_actual_jwt_token
+### 6. Test endpoints in order for complete workflow validation

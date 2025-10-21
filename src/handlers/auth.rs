@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use std::env;
 use validator::Validate;
 
-use crate::models::{CreateUserRequest, LoginRequest, UserResponse, GoogleAuthRequest};
+use crate::models::{AuthResponse, CreateUserRequest, GoogleAuthRequest, LoginRequest, UserResponse};
 use crate::services::{AuthService, GoogleAuthService};
 use crate::utils::response::ApiResponse;
 
@@ -13,9 +13,9 @@ pub async fn register(
 ) -> Result<HttpResponse> {
     // Validate request
     if let Err(validation_errors) = request.validate() {
-        return Ok(HttpResponse::BadRequest().json(ApiResponse::error(
+        return Ok(HttpResponse::BadRequest().json(ApiResponse::<AuthResponse>::error(
             "Validation failed",
-            Some(validation_errors.field_errors()),
+            Some(validation_errors.field_errors().into_iter().map(|(k, v)| (k.to_string(), v.into_iter().map(|e| e.to_string()).collect())).collect()),
         )));
     }
 
@@ -26,10 +26,7 @@ pub async fn register(
         Ok(auth_response) => Ok(HttpResponse::Created().json(ApiResponse::success(auth_response))),
         Err(e) => {
             log::error!("Registration error: {}", e);
-            Ok(HttpResponse::BadRequest().json(ApiResponse::error(
-                &e.to_string(),
-                None,
-            )))
+            Ok(HttpResponse::BadRequest().json(ApiResponse::<AuthResponse>::error(&e.to_string(), None)))
         }
     }
 }
@@ -40,10 +37,23 @@ pub async fn login(
 ) -> Result<HttpResponse> {
     // Validate request
     if let Err(validation_errors) = request.validate() {
-        return Ok(HttpResponse::BadRequest().json(ApiResponse::error(
-            "Validation failed",
-            Some(validation_errors.field_errors()),
-        )));
+        return Ok(
+            HttpResponse::BadRequest().json(ApiResponse::<UserResponse>::error(
+                "Validation failed",
+                Some(
+                    validation_errors
+                        .field_errors()
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k.to_string(),
+                                v.into_iter().map(|e| e.to_string()).collect(),
+                            )
+                        })
+                        .collect(),
+                ),
+            )),
+        );
     }
 
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
@@ -53,10 +63,12 @@ pub async fn login(
         Ok(auth_response) => Ok(HttpResponse::Ok().json(ApiResponse::success(auth_response))),
         Err(e) => {
             log::error!("Login error: {}", e);
-            Ok(HttpResponse::Unauthorized().json(ApiResponse::error(
-                "Invalid credentials",
-                None,
-            )))
+            Ok(
+                HttpResponse::Unauthorized().json(ApiResponse::<UserResponse>::error(
+                    "Invalid credentials",
+                    None,
+                )),
+            )
         }
     }
 }
@@ -71,21 +83,25 @@ pub async fn me(
     pool: web::Data<PgPool>,
     user_id: web::ReqData<uuid::Uuid>,
 ) -> Result<HttpResponse> {
+    log::info!("User ID 1: {:?}", user_id.clone().into_inner());
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     let auth_service = AuthService::new(pool.get_ref().clone(), jwt_secret);
-
+    log::info!("User ID 2: {}", user_id.clone().into_inner());
     match auth_service.get_user_by_id(&user_id.into_inner()).await {
-        Ok(Some(user)) => Ok(HttpResponse::Ok().json(ApiResponse::success(UserResponse::from(user)))),
-        Ok(None) => Ok(HttpResponse::NotFound().json(ApiResponse::error(
-            "User not found",
-            None,
-        ))),
+        Ok(Some(user)) => {
+            log::info!("User: {:?}", user);
+            Ok(HttpResponse::Ok().json(ApiResponse::success(UserResponse::from(user))))
+        }
+        Ok(None) => Ok(HttpResponse::NotFound()
+            .json(ApiResponse::<UserResponse>::error("User not found", None))),
         Err(e) => {
             log::error!("Get user error: {}", e);
-            Ok(HttpResponse::InternalServerError().json(ApiResponse::error(
-                "Internal server error",
-                None,
-            )))
+            Ok(
+                HttpResponse::InternalServerError().json(ApiResponse::<UserResponse>::error(
+                    "Internal server error",
+                    None,
+                )),
+            )
         }
     }
 }
@@ -97,28 +113,30 @@ pub async fn google_auth(
     let google_auth_service = GoogleAuthService::new(pool.get_ref().clone());
 
     // Verify Google token and get user info
-    match google_auth_service.verify_google_token(&request.token).await {
+    match google_auth_service
+        .verify_google_token(&request.token)
+        .await
+    {
         Ok(google_user) => {
             // Authenticate user with Google info
-            match google_auth_service.authenticate_google_user(google_user).await {
+            match google_auth_service
+                .authenticate_google_user(google_user)
+                .await
+            {
                 Ok(auth_response) => {
                     Ok(HttpResponse::Ok().json(ApiResponse::success(auth_response)))
                 }
                 Err(e) => {
                     log::error!("Google authentication error: {}", e);
-                    Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
-                        "Authentication failed",
-                        None,
-                    )))
+                    Ok(HttpResponse::InternalServerError()
+                        .json(ApiResponse::<String>::error("Authentication failed", None)))
                 }
             }
         }
         Err(e) => {
             log::error!("Google token verification error: {}", e);
-            Ok(HttpResponse::Unauthorized().json(ApiResponse::<String>::error(
-                "Invalid Google token",
-                None,
-            )))
+            Ok(HttpResponse::Unauthorized()
+                .json(ApiResponse::<String>::error("Invalid Google token", None)))
         }
     }
 }

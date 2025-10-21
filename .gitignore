@@ -1,3 +1,4 @@
 /target
 /uploads
 /env
+.env

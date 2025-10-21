@@ -47,7 +47,8 @@ UPLOAD_DIR=uploads
 2. Run migrations:
 
 ```bash
-cargo run --bin migrate
+cargo sqlx migrate run
+cargo sqlx prepare     
 ```
 
 ## Running the Server

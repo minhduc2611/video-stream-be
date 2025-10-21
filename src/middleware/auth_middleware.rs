@@ -1,14 +1,13 @@
+use actix_utils::future::{Ready, ready};
 use actix_web::{
+    body::{EitherBody, MessageBody},
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    Error, HttpMessage,
+    Error, HttpMessage, HttpResponse,
 };
+
 use futures_util::future::LocalBoxFuture;
-use std::{
-    future::{ready, Ready},
-    rc::Rc,
-};
+use std::{env, rc::Rc};
 use uuid::Uuid;
-use std::env;
 
 use crate::services::AuthService;
 use crate::utils::response::ApiResponse;
@@ -19,9 +18,9 @@ impl<S, B> Transform<S, ServiceRequest> for AuthMiddleware
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
-    B: 'static,
+    B: MessageBody + 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type Transform = AuthMiddlewareService<S>;
     type InitError = ();
@@ -42,9 +41,9 @@ impl<S, B> Service<ServiceRequest> for AuthMiddlewareService<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
-    B: 'static,
+    B: MessageBody + 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -56,7 +55,7 @@ where
         Box::pin(async move {
             // Extract token from Authorization header
             let auth_header = req.headers().get("Authorization");
-            
+            log::info!("Auth header: {:?}", auth_header);
             if let Some(auth_header) = auth_header {
                 if let Ok(auth_str) = auth_header.to_str() {
                     if auth_str.starts_with("Bearer ") {
@@ -76,40 +75,34 @@ where
                                 if let Ok(user_id) = Uuid::parse_str(&claims.sub) {
                                     req.extensions_mut().insert(user_id);
                                 } else {
-                                    return Ok(req.into_response(
-                                        actix_web::HttpResponse::Unauthorized()
-                                            .json(ApiResponse::error("Invalid token", None))
-                                    ));
+                                    let res = HttpResponse::Unauthorized()
+                                        .json(ApiResponse::<()>::error("Invalid token", None));
+                                    return Ok(req.into_response(res).map_into_right_body());
                                 }
                             }
                             Err(_) => {
-                                return Ok(req.into_response(
-                                    actix_web::HttpResponse::Unauthorized()
-                                        .json(ApiResponse::error("Invalid token", None))
-                                ));
+                                let res = HttpResponse::Unauthorized()
+                                    .json(ApiResponse::<()>::error("Invalid token", None));
+                                return Ok(req.into_response(res).map_into_right_body());
                             }
                         }
                     } else {
-                        return Ok(req.into_response(
-                            actix_web::HttpResponse::Unauthorized()
-                                .json(ApiResponse::error("Invalid authorization header format", None))
-                        ));
+                        let res = HttpResponse::Unauthorized()
+                            .json(ApiResponse::<()>::error("Invalid authorization header format", None));
+                        return Ok(req.into_response(res).map_into_right_body());
                     }
                 } else {
-                    return Ok(req.into_response(
-                        actix_web::HttpResponse::Unauthorized()
-                            .json(ApiResponse::error("Invalid authorization header", None))
-                    ));
+                    let res = HttpResponse::Unauthorized()
+                        .json(ApiResponse::<()>::error("Invalid authorization header", None));
+                    return Ok(req.into_response(res).map_into_right_body());
                 }
             } else {
-                return Ok(req.into_response(
-                    actix_web::HttpResponse::Unauthorized()
-                        .json(ApiResponse::error("Authorization header required", None))
-                ));
+                let res = HttpResponse::Unauthorized().json(ApiResponse::<()>::error("Authorization header missing", None));
+                return Ok(req.into_response(res).map_into_right_body());
             }
-
+            
             let res = service.call(req).await?;
-            Ok(res)
+            Ok(res.map_into_left_body())
         })
     }
 }

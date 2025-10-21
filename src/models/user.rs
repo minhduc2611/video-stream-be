@@ -10,8 +10,8 @@ pub struct User {
     pub email: String,
     pub username: String,
     pub password_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -50,7 +50,7 @@ pub struct UserResponse {
     pub id: Uuid,
     pub email: String,
     pub username: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize)]

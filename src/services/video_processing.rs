@@ -1,59 +1,65 @@
 use anyhow::Result;
 use std::process::Command;
 use uuid::Uuid;
-use crate::services::{VideoService, StorageService};
+use crate::services::{
+    // VideoService, 
+    StorageService
+};
 use crate::models::VideoStatus;
 
 pub struct VideoProcessingService {
-    video_service: VideoService,
+    // video_service: VideoService,
     storage_service: StorageService,
 }
 
 impl VideoProcessingService {
-    pub fn new(video_service: VideoService, storage_service: StorageService) -> Self {
+    pub fn new(
+        // video_service: VideoService, 
+        storage_service: StorageService
+    ) -> Self {
         Self {
-            video_service,
+            // video_service,
             storage_service,
         }
     }
 
-    pub async fn process_video(&self, video_id: Uuid) -> Result<()> {
-        // Update status to processing
-        self.video_service.update_video_status(&video_id, VideoStatus::Processing).await?;
+    // pub async fn process_video(&self, video_id: Uuid) -> Result<()> {
+    //     // Update status to processing
+    //     self.video_service.update_video_status(&video_id, VideoStatus::Processing).await?;
 
-        // Get video info
-        let video = self.video_service.get_video_by_id(&video_id).await?
-            .ok_or_else(|| anyhow::anyhow!("Video not found"))?;
+    //     // Get video info
+    //     let video = self.video_service.get_video_by_id(&video_id).await?
+    //         .ok_or_else(|| anyhow::anyhow!("Video not found"))?;
 
-        let input_path = self.storage_service.get_video_path(&video_id, &video.filename);
-        let output_dir = self.storage_service.get_hls_path(&video_id);
-        let thumbnail_path = self.storage_service.get_thumbnail_path(&video_id);
+    //     let input_path = self.storage_service.get_video_path(&video_id, &video.filename);
+    //     let output_dir = self.storage_service.get_hls_path(&video_id);
+    //     let thumbnail_path = self.storage_service.get_thumbnail_path(&video_id);
 
-        // Create output directory
-        self.storage_service.create_video_directory(&video_id).await?;
+    //     // Create output directory
+    //     self.storage_service.create_video_directory(&video_id).await?;
 
-        // Generate HLS streams in multiple resolutions
-        self.generate_hls_streams(&input_path, &output_dir).await?;
+    //     // Generate HLS streams in multiple resolutions
+    //     self.generate_hls_streams(&input_path, &output_dir).await?;
 
-        // Generate thumbnail
-        self.generate_thumbnail(&input_path, &thumbnail_path).await?;
+    //     // Generate thumbnail
+    //     self.generate_thumbnail(&input_path, &thumbnail_path).await?;
 
-        // Get video duration
-        let duration = self.get_video_duration(&input_path).await?;
+    //     // Get video duration
+    //     let duration = self.get_video_duration(&input_path).await?;
 
-        // Update video metadata
-        self.video_service.update_video_metadata(
-            &video_id,
-            Some(duration),
-            Some(format!("thumbnails/{}.jpg", video_id)),
-            Some(format!("hls/{}/playlist.m3u8", video_id)),
-        ).await?;
+    //     // Update video metadata
+    //     self.video_service.update_video_metadata(
+    //         &video_id,
+    //         Some(duration),
+    //         Some(format!("thumbnails/{}.jpg", video_id)),
+    //         Some(format!("hls/{}/playlist.m3u8", video_id)),
+    //     ).await?;
 
-        // Update status to ready
-        self.video_service.update_video_status(&video_id, VideoStatus::Ready).await?;
+    //     // Update status to ready
+    //     self.video_service.update_video_status(&video_id, VideoStatus::Ready).await?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     async fn generate_hls_streams(&self, input_path: &str, output_dir: &str) -> Result<()> {
         let playlist_path = format!("{}/playlist.m3u8", output_dir);

@@ -4253,6 +4253,7 @@ version = "0.1.0"
 dependencies = [
  "actix-cors",
  "actix-multipart",
+ "actix-utils",
  "actix-web",
  "anyhow",
  "bcrypt",

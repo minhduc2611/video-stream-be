@@ -9,7 +9,7 @@ mod models;
 mod services;
 mod utils;
 
-use handlers::{auth, videos, health};
+use handlers::{auth, videos};
 use middleware::auth_middleware;
 use services::database;
 
@@ -51,20 +51,20 @@ async fn main() -> std::io::Result<()> {
                             .route("/login", web::post().to(auth::login))
                             .route("/google", web::post().to(auth::google_auth))
                             .route("/logout", web::post().to(auth::logout))
-                            .route("/me", web::get().to(auth::me))
+                            .route("/me", web::get().to(auth::me).wrap(auth_middleware::AuthMiddleware))
                     )
                     .service(
                         web::scope("/videos")
                             .wrap(auth_middleware::AuthMiddleware)
-                            .route("", web::get().to(videos::list_videos))
+                            // .route("", web::get().to(videos::list_videos))
                             .route("", web::post().to(videos::upload_video))
-                            .route("/{id}", web::get().to(videos::get_video))
-                            .route("/{id}/stream", web::get().to(videos::stream_video))
-                            .route("/{id}/stream/{filename}", web::get().to(videos::serve_hls_file))
-                            .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
-                            .route("/{id}", web::delete().to(videos::delete_video))
+                            // .route("/{id}", web::get().to(videos::get_video))
+                            // .route("/{id}/stream", web::get().to(videos::stream_video))
+                            // .route("/{id}/stream/{filename}", web::get().to(videos::serve_hls_file))
+                            // .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
+                            // .route("/{id}", web::delete().to(videos::delete_video))
                     )
-                    .route("/health", web::get().to(health::health_check))
+                    // .route("/health", web::get().to(health::health_check))
             )
     })
     .bind(format!("0.0.0.0:{}", port))?
