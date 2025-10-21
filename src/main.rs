@@ -1,5 +1,5 @@
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer, middleware::Logger};
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenv::dotenv;
 use std::env;
 
@@ -18,16 +18,18 @@ async fn main() -> std::io::Result<()> {
     dotenv().ok();
     env_logger::init();
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    log::info!("DATABASE_URL: {}", database_url);
     let port = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse::<u16>()
         .expect("PORT must be a valid number");
+    log::info!("PORT: {}", port);
 
     // Initialize database connection pool
-    let pool = database::create_pool(&database_url).await
+    let pool = database::create_pool(&database_url)
+        .await
         .expect("Failed to create database pool");
 
     log::info!("Starting server on port {}", port);
@@ -51,20 +53,23 @@ async fn main() -> std::io::Result<()> {
                             .route("/login", web::post().to(auth::login))
                             .route("/google", web::post().to(auth::google_auth))
                             .route("/logout", web::post().to(auth::logout))
-                            .route("/me", web::get().to(auth::me).wrap(auth_middleware::AuthMiddleware))
+                            .route(
+                                "/me",
+                                web::get()
+                                    .to(auth::me)
+                                    .wrap(auth_middleware::AuthMiddleware),
+                            ),
                     )
                     .service(
                         web::scope("/videos")
                             .wrap(auth_middleware::AuthMiddleware)
                             // .route("", web::get().to(videos::list_videos))
-                            .route("", web::post().to(videos::upload_video))
-                            // .route("/{id}", web::get().to(videos::get_video))
-                            // .route("/{id}/stream", web::get().to(videos::stream_video))
-                            // .route("/{id}/stream/{filename}", web::get().to(videos::serve_hls_file))
-                            // .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
-                            // .route("/{id}", web::delete().to(videos::delete_video))
-                    )
-                    // .route("/health", web::get().to(health::health_check))
+                            .route("", web::post().to(videos::upload_video)), // .route("/{id}", web::get().to(videos::get_video))
+                                                                              // .route("/{id}/stream", web::get().to(videos::stream_video))
+                                                                              // .route("/{id}/stream/{filename}", web::get().to(videos::serve_hls_file))
+                                                                              // .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
+                                                                              // .route("/{id}", web::delete().to(videos::delete_video))
+                    ), // .route("/health", web::get().to(health::health_check))
             )
     })
     .bind(format!("0.0.0.0:{}", port))?

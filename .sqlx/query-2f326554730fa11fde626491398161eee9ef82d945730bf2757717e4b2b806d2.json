@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE videos SET duration = $1, thumbnail_path = $2, hls_playlist_path = $3, updated_at = NOW() WHERE id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Varchar",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f326554730fa11fde626491398161eee9ef82d945730bf2757717e4b2b806d2"
+}

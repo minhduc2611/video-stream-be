@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::path::Path;
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct StorageService {
     upload_dir: String,
 }
@@ -46,7 +47,12 @@ impl StorageService {
         tokio::fs::create_dir_all(parent_dir).await?;
         tokio::fs::write(&file_path, data).await?;
 
+        log::info!("Saved file to: {}", file_path);
         Ok(file_path)
+    }
+
+    pub async fn save_video_file(&self, video_id: &Uuid, filename: &str, data: &[u8]) -> Result<String> {
+        self.save_uploaded_file(video_id, filename, data).await
     }
 
     pub async fn file_exists(&self, path: &str) -> bool {

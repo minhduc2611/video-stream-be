@@ -4257,6 +4257,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "bcrypt",
+ "bytes",
  "chrono",
  "config",
  "dotenv",

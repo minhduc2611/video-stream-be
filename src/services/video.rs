@@ -3,6 +3,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use anyhow::Result;
 
+#[derive(Clone)]
 pub struct VideoService {
     pool: PgPool,
 }
@@ -13,17 +14,25 @@ impl VideoService {
     }
 
     pub async fn create_video(&self, request: CreateVideoRequest, user_id: Uuid, filename: String, original_filename: String, file_size: i64) -> Result<Video> {
-        let video = sqlx::query_as!(
-            Video,
+        let video_id = sqlx::query_scalar!(
             "INSERT INTO videos (title, description, filename, original_filename, file_size, status, user_id) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             request.title,
-            request.description,
+            request.description as Option<String>,
             filename,
             original_filename,
             file_size,
-            VideoStatus::Uploading as _,
+            VideoStatus::Uploading.to_string(),
             user_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        // Fetch the complete video record
+        let video = sqlx::query_as!(
+            Video,
+            "SELECT * FROM videos WHERE id = $1",
+            video_id
         )
         .fetch_one(&self.pool)
         .await?;
@@ -44,12 +53,6 @@ impl VideoService {
     }
 
     pub async fn list_videos(&self, user_id: Option<Uuid>, limit: i64, offset: i64) -> Result<PaginatedResponse<VideoResponse>> {
-        let query = if let Some(user_id) = user_id {
-            "SELECT * FROM videos WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
-        } else {
-            "SELECT * FROM videos ORDER BY created_at DESC LIMIT $1 OFFSET $2"
-        };
-
         let videos = if let Some(user_id) = user_id {
             sqlx::query_as!(
                 Video,
@@ -86,13 +89,14 @@ impl VideoService {
             .await?
         };
 
-        let total_pages = (total + limit - 1) / limit;
+        let final_total = total.unwrap_or(0);
+        let total_pages = (final_total + limit - 1) / limit;
         let current_page = (offset / limit) + 1;
 
         Ok(PaginatedResponse {
             data: videos.into_iter().map(|v| v.into()).collect(),
             pagination: PaginationMeta {
-                total,
+                total: final_total,
                 limit,
                 offset,
                 current_page,
@@ -106,7 +110,7 @@ impl VideoService {
     pub async fn update_video_status(&self, video_id: &Uuid, status: VideoStatus) -> Result<()> {
         sqlx::query!(
             "UPDATE videos SET status = $1, updated_at = NOW() WHERE id = $2",
-            status as _,
+            status.to_string(),
             video_id
         )
         .execute(&self.pool)

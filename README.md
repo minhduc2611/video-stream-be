@@ -59,6 +59,9 @@ cargo run
 
 The server will start on `http://localhost:8080`
 
+
+gcloud config set billing/quota_project video-streaming-473721
+
 ## API Endpoints
 
 ### Authentication
