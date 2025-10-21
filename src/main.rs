@@ -63,12 +63,16 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/videos")
                             .wrap(auth_middleware::AuthMiddleware)
-                            // .route("", web::get().to(videos::list_videos))
-                            .route("", web::post().to(videos::upload_video)), // .route("/{id}", web::get().to(videos::get_video))
-                                                                              // .route("/{id}/stream", web::get().to(videos::stream_video))
-                                                                              // .route("/{id}/stream/{filename}", web::get().to(videos::serve_hls_file))
-                                                                              // .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
-                                                                              // .route("/{id}", web::delete().to(videos::delete_video))
+                            .route("", web::get().to(videos::list_videos))
+                            .route("", web::post().to(videos::upload_video))
+                            .route("/{id}", web::get().to(videos::get_video))
+                            .route("/{id}/stream", web::get().to(videos::stream_video))
+                            .route(
+                                "/{id}/stream/{filename}",
+                                web::get().to(videos::serve_hls_file),
+                            )
+                            .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
+                            .route("/{id}", web::delete().to(videos::delete_video)),
                     ), // .route("/health", web::get().to(health::health_check))
             )
     })

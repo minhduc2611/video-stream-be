@@ -68,7 +68,7 @@ GET {{baseUrl}}/videos?limit=5&offset=0
 Authorization: Bearer {{token}}
 
 ### Get Video Details
-GET {{baseUrl}}/videos/123e4567-e89b-12d3-a456-426614174000
+GET {{baseUrl}}/videos/6bcb89a6-a203-4593-ad07-e199d22d1d5e
 Authorization: Bearer {{token}}
 
 ### Get Video Streaming Info

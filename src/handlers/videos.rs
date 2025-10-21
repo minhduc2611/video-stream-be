@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use serde::Deserialize;
 
-use crate::models::{CreateVideoRequest, VideoUploadResponse};
+use crate::models::{CreateVideoRequest, VideoUploadResponse, VideoResponse, HlsStreamingResponse};
 use crate::services::{
     VideoService, 
     GcsService,
@@ -200,4 +200,386 @@ pub struct VideoListQuery {
 fn is_video_file(filename: &str) -> bool {
     let extension = filename.split('.').last().unwrap_or("").to_lowercase();
     matches!(extension.as_str(), "mp4" | "mov" | "avi" | "mkv" | "webm" | "flv" | "wmv" | "m4v")
+}
+
+/// List videos with pagination
+pub async fn list_videos(
+    pool: web::Data<PgPool>,
+    user_id: web::ReqData<Uuid>,
+    query: web::Query<VideoListQuery>,
+) -> Result<HttpResponse> {
+    let video_service = VideoService::new(pool.get_ref().clone());
+    let user_id_value = user_id.into_inner();
+    
+    let limit = query.limit.unwrap_or(10).min(100); // Max 100 per page
+    let offset = query.offset.unwrap_or(0);
+    
+    match video_service.list_videos(Some(user_id_value), limit, offset).await {
+        Ok(result) => Ok(HttpResponse::Ok().json(ApiResponse::success(result))),
+        Err(e) => {
+            log::error!("Failed to list videos: {}", e);
+            Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to fetch videos",
+                None,
+            )))
+        }
+    }
+}
+
+/// Get video details by ID
+pub async fn get_video(
+    pool: web::Data<PgPool>,
+    user_id: web::ReqData<Uuid>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse> {
+    let video_service = VideoService::new(pool.get_ref().clone());
+    let user_id_value = user_id.into_inner();
+    let video_id = path.into_inner();
+    
+    match video_service.get_video_by_id(&video_id).await {
+        Ok(Some(video)) => {
+            // Check if user owns the video
+            if video.user_id != user_id_value {
+                return Ok(HttpResponse::Forbidden().json(ApiResponse::<String>::error(
+                    "Access denied",
+                    None,
+                )));
+            }
+            
+            let video_response: VideoResponse = video.into();
+            Ok(HttpResponse::Ok().json(ApiResponse::success(video_response)))
+        }
+        Ok(None) => Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "Video not found",
+            None,
+        ))),
+        Err(e) => {
+            log::error!("Failed to get video: {}", e);
+            Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to fetch video",
+                None,
+            )))
+        }
+    }
+}
+
+/// Get video streaming information
+pub async fn stream_video(
+    pool: web::Data<PgPool>,
+    user_id: web::ReqData<Uuid>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse> {
+    let video_service = VideoService::new(pool.get_ref().clone());
+    let user_id_value = user_id.into_inner();
+    let video_id = path.into_inner();
+    
+    match video_service.get_video_by_id(&video_id).await {
+        Ok(Some(video)) => {
+            // Check if user owns the video
+            if video.user_id != user_id_value {
+                return Ok(HttpResponse::Forbidden().json(ApiResponse::<String>::error(
+                    "Access denied",
+                    None,
+                )));
+            }
+            
+            let status = video.get_status();
+            let hls_url = if video.hls_playlist_path.is_some() {
+                format!("/api/v1/videos/{}/stream/playlist.m3u8", video_id)
+            } else {
+                return Ok(HttpResponse::BadRequest().json(ApiResponse::<String>::error(
+                    "Video is not ready for streaming",
+                    None,
+                )));
+            };
+            
+            let thumbnail_url = video.thumbnail_path.map(|_| {
+                format!("/api/v1/videos/{}/thumbnail", video_id)
+            });
+            
+            let response = HlsStreamingResponse {
+                video_id,
+                hls_url,
+                thumbnail_url,
+                status,
+                title: video.title,
+                duration: video.duration,
+            };
+            
+            Ok(HttpResponse::Ok().json(ApiResponse::success(response)))
+        }
+        Ok(None) => Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "Video not found",
+            None,
+        ))),
+        Err(e) => {
+            log::error!("Failed to get video stream info: {}", e);
+            Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to fetch video stream info",
+                None,
+            )))
+        }
+    }
+}
+
+/// Serve HLS files (.m3u8 and .ts files)
+pub async fn serve_hls_file(
+    pool: web::Data<PgPool>,
+    user_id: web::ReqData<Uuid>,
+    path: web::Path<(Uuid, String)>,
+) -> Result<HttpResponse> {
+    let video_service = VideoService::new(pool.get_ref().clone());
+    let gcs_service = match GcsService::new().await {
+        Ok(service) => service,
+        Err(e) => {
+            log::error!("Failed to initialize GCS service: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Storage service unavailable",
+                None,
+            )));
+        }
+    };
+    
+    let user_id_value = user_id.into_inner();
+    let (video_id, filename) = path.into_inner();
+    
+    // Verify video exists and user has access
+    match video_service.get_video_by_id(&video_id).await {
+        Ok(Some(video)) => {
+            if video.user_id != user_id_value {
+                return Ok(HttpResponse::Forbidden().json(ApiResponse::<String>::error(
+                    "Access denied",
+                    None,
+                )));
+            }
+            
+            // Check if video is ready for streaming
+            if video.get_status() != crate::models::VideoStatus::Ready {
+                return Ok(HttpResponse::BadRequest().json(ApiResponse::<String>::error(
+                    "Video is not ready for streaming",
+                    None,
+                )));
+            }
+        }
+        Ok(None) => return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "Video not found",
+            None,
+        ))),
+        Err(e) => {
+            log::error!("Failed to verify video access: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to verify video access",
+                None,
+            )));
+        }
+    }
+    
+    // Construct GCS path for the HLS file
+    let gcs_path = format!("hls/{}/{}", video_id, filename);
+    
+    // Download file from GCS
+    let temp_path = format!("/tmp/hls_{}_{}", video_id, filename);
+    if let Err(e) = gcs_service.download_file(&gcs_path, &temp_path).await {
+        log::error!("Failed to download HLS file from GCS: {}", e);
+        return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "HLS file not found",
+            None,
+        )));
+    }
+    
+    // Determine content type based on file extension
+    let content_type = if filename.ends_with(".m3u8") {
+        "application/vnd.apple.mpegurl"
+    } else if filename.ends_with(".ts") {
+        "video/mp2t"
+    } else {
+        "application/octet-stream"
+    };
+    
+    // Read file content
+    match tokio::fs::read(&temp_path).await {
+        Ok(content) => {
+            // Clean up temp file
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            
+            Ok(HttpResponse::Ok()
+                .content_type(content_type)
+                .append_header(("Cache-Control", "public, max-age=3600"))
+                .body(content))
+        }
+        Err(e) => {
+            log::error!("Failed to read HLS file: {}", e);
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to read HLS file",
+                None,
+            )))
+        }
+    }
+}
+
+/// Get video thumbnail
+pub async fn get_thumbnail(
+    pool: web::Data<PgPool>,
+    user_id: web::ReqData<Uuid>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse> {
+    let video_service = VideoService::new(pool.get_ref().clone());
+    let gcs_service = match GcsService::new().await {
+        Ok(service) => service,
+        Err(e) => {
+            log::error!("Failed to initialize GCS service: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Storage service unavailable",
+                None,
+            )));
+        }
+    };
+    
+    let user_id_value = user_id.into_inner();
+    let video_id = path.into_inner();
+    
+    // Verify video exists and user has access
+    match video_service.get_video_by_id(&video_id).await {
+        Ok(Some(video)) => {
+            if video.user_id != user_id_value {
+                return Ok(HttpResponse::Forbidden().json(ApiResponse::<String>::error(
+                    "Access denied",
+                    None,
+                )));
+            }
+            
+            if video.thumbnail_path.is_none() {
+                return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+                    "Thumbnail not available",
+                    None,
+                )));
+            }
+        }
+        Ok(None) => return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "Video not found",
+            None,
+        ))),
+        Err(e) => {
+            log::error!("Failed to verify video access: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to verify video access",
+                None,
+            )));
+        }
+    }
+    
+    // Construct GCS path for thumbnail
+    let gcs_path = format!("thumbnails/{}.jpg", video_id);
+    
+    // Download thumbnail from GCS
+    let temp_path = format!("/tmp/thumb_{}.jpg", video_id);
+    if let Err(e) = gcs_service.download_file(&gcs_path, &temp_path).await {
+        log::error!("Failed to download thumbnail from GCS: {}", e);
+        return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "Thumbnail not found",
+            None,
+        )));
+    }
+    
+    // Read thumbnail content
+    match tokio::fs::read(&temp_path).await {
+        Ok(content) => {
+            // Clean up temp file
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            
+            Ok(HttpResponse::Ok()
+                .content_type("image/jpeg")
+                .append_header(("Cache-Control", "public, max-age=86400")) // Cache for 24 hours
+                .body(content))
+        }
+        Err(e) => {
+            log::error!("Failed to read thumbnail: {}", e);
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to read thumbnail",
+                None,
+            )))
+        }
+    }
+}
+
+/// Delete video
+pub async fn delete_video(
+    pool: web::Data<PgPool>,
+    user_id: web::ReqData<Uuid>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse> {
+    let video_service = VideoService::new(pool.get_ref().clone());
+    let gcs_service = match GcsService::new().await {
+        Ok(service) => service,
+        Err(e) => {
+            log::error!("Failed to initialize GCS service: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Storage service unavailable",
+                None,
+            )));
+        }
+    };
+    
+    let user_id_value = user_id.into_inner();
+    let video_id = path.into_inner();
+    
+    // Get video details before deletion
+    let video = match video_service.get_video_by_id(&video_id).await {
+        Ok(Some(video)) => {
+            if video.user_id != user_id_value {
+                return Ok(HttpResponse::Forbidden().json(ApiResponse::<String>::error(
+                    "Access denied",
+                    None,
+                )));
+            }
+            video
+        }
+        Ok(None) => return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+            "Video not found",
+            None,
+        ))),
+        Err(e) => {
+            log::error!("Failed to get video for deletion: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to fetch video",
+                None,
+            )));
+        }
+    };
+    
+    // Delete from database
+    match video_service.delete_video(&video_id, &user_id_value).await {
+        Ok(true) => {
+            log::info!("Video {} deleted from database", video_id);
+        }
+        Ok(false) => {
+            return Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
+                "Video not found",
+                None,
+            )));
+        }
+        Err(e) => {
+            log::error!("Failed to delete video from database: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to delete video",
+                None,
+            )));
+        }
+    }
+    
+    // Delete files from GCS (optional - files will be cleaned up by GCS lifecycle policies)
+    let video_path = gcs_service.get_video_path(&video_id, &video.filename);
+    let _ = gcs_service.delete_file(&video_path).await; // Ignore errors for cleanup
+    
+    if let Some(hls_path) = &video.hls_playlist_path {
+        let _ = gcs_service.delete_file(hls_path).await; // Ignore errors for cleanup
+    }
+    
+    if let Some(thumbnail_path) = &video.thumbnail_path {
+        let _ = gcs_service.delete_file(thumbnail_path).await; // Ignore errors for cleanup
+    }
+    
+    Ok(HttpResponse::Ok().json(ApiResponse::success("Video deleted successfully")))
 }
