@@ -113,9 +113,9 @@ pub async fn upload_video(
 
     // Generate unique filename
     log::info!("Generating unique filename");
-    let video_id = Uuid::new_v4();
+    // let video_id = Uuid::new_v4();
     let file_extension = original_filename.split('.').last().unwrap_or("mp4");
-    let filename = format!("{}.{}", video_id, file_extension);
+    let filename = format!("{}.{}", title.to_lowercase().replace(" ", "_").replace(".", ""), file_extension);
 
     // Create video record in database
     let create_request = CreateVideoRequest { 
@@ -140,6 +140,8 @@ pub async fn upload_video(
             )));
         }
     };
+
+    let video_id: Uuid = video.id;
 
     log::info!("Saving video file to GCS");
     // Save video file to GCS directly from memory
@@ -209,12 +211,22 @@ pub async fn list_videos(
     query: web::Query<VideoListQuery>,
 ) -> Result<HttpResponse> {
     let video_service = VideoService::new(pool.get_ref().clone());
+    let gcs_service = match GcsService::new().await {
+        Ok(service) => service,
+        Err(e) => {
+            log::error!("Failed to initialize GCS service: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to initialize storage service",
+                None,
+            )));
+        }
+    };
     let user_id_value = user_id.into_inner();
     
     let limit = query.limit.unwrap_or(10).min(100); // Max 100 per page
     let offset = query.offset.unwrap_or(0);
     
-    match video_service.list_videos(Some(user_id_value), limit, offset).await {
+    match video_service.list_videos(Some(user_id_value), limit, offset, &gcs_service).await {
         Ok(result) => Ok(HttpResponse::Ok().json(ApiResponse::success(result))),
         Err(e) => {
             log::error!("Failed to list videos: {}", e);
@@ -233,6 +245,16 @@ pub async fn get_video(
     path: web::Path<Uuid>,
 ) -> Result<HttpResponse> {
     let video_service = VideoService::new(pool.get_ref().clone());
+    let gcs_service = match GcsService::new().await {
+        Ok(service) => service,
+        Err(e) => {
+            log::error!("Failed to initialize GCS service: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to initialize storage service",
+                None,
+            )));
+        }
+    };
     let user_id_value = user_id.into_inner();
     let video_id = path.into_inner();
     
@@ -246,7 +268,7 @@ pub async fn get_video(
                 )));
             }
             
-            let video_response: VideoResponse = video.into();
+            let video_response = VideoResponse::from_video_with_gcs_urls(video, &gcs_service);
             Ok(HttpResponse::Ok().json(ApiResponse::success(video_response)))
         }
         Ok(None) => Ok(HttpResponse::NotFound().json(ApiResponse::<String>::error(
@@ -270,6 +292,16 @@ pub async fn stream_video(
     path: web::Path<Uuid>,
 ) -> Result<HttpResponse> {
     let video_service = VideoService::new(pool.get_ref().clone());
+    let gcs_service = match GcsService::new().await {
+        Ok(service) => service,
+        Err(e) => {
+            log::error!("Failed to initialize GCS service: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
+                "Failed to initialize storage service",
+                None,
+            )));
+        }
+    };
     let user_id_value = user_id.into_inner();
     let video_id = path.into_inner();
     
@@ -284,8 +316,8 @@ pub async fn stream_video(
             }
             
             let status = video.get_status();
-            let hls_url = if video.hls_playlist_path.is_some() {
-                format!("/api/v1/videos/{}/stream/playlist.m3u8", video_id)
+            let hls_url = if let Some(ref hls_playlist_path) = video.hls_playlist_path {
+                gcs_service.get_public_url(hls_playlist_path)
             } else {
                 return Ok(HttpResponse::BadRequest().json(ApiResponse::<String>::error(
                     "Video is not ready for streaming",
@@ -293,8 +325,8 @@ pub async fn stream_video(
                 )));
             };
             
-            let thumbnail_url = video.thumbnail_path.map(|_| {
-                format!("/api/v1/videos/{}/thumbnail", video_id)
+            let thumbnail_url = video.thumbnail_path.map(|path| {
+                gcs_service.get_public_url(&path)
             });
             
             let response = HlsStreamingResponse {

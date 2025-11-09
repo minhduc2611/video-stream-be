@@ -100,15 +100,15 @@ impl GcsService {
     }
 
     pub fn get_video_path(&self, video_id: &Uuid, filename: &str) -> String {
-        format!("videos/{}/{}", video_id, filename)
+        format!("{}/videos/{}", video_id, filename)
     }
 
     pub fn get_thumbnail_path(&self, video_id: &Uuid) -> String {
-        format!("thumbnails/{}.jpg", video_id)
+        format!("{}/thumbnails/thumbnail.jpg", video_id)
     }
 
     pub fn get_hls_path(&self, video_id: &Uuid) -> String {
-        format!("hls/{}/", video_id)
+        format!("{}/hls/", video_id)
     }
 
     /// Get content type based on file extension

@@ -53,7 +53,8 @@ impl VideoProcessingService {
         let gcs_service_clone = self.gcs_service.clone();
         
         task::spawn(async move {
-            if let Err(e) = Self::process_video_background(
+            log::info!("🎬 Starting background video processing for {}", video_id);
+            match Self::process_video_background(
                 video_id,
                 local_input_path,
                 temp_dir,
@@ -62,8 +63,16 @@ impl VideoProcessingService {
                 video_service_clone.clone(),
                 gcs_service_clone,
             ).await {
-                log::error!("Video processing failed for {}: {}", video_id, e);
-                let _ = video_service_clone.update_video_status(&video_id, VideoStatus::Failed).await;
+                Ok(_) => {
+                    log::info!("✅ Video processing completed successfully for {}", video_id);
+                }
+                Err(e) => {
+                    log::error!("❌ Video processing failed for {}: {}", video_id, e);
+                    log::error!("🔍 Error details: {:?}", e);
+                    if let Err(update_err) = video_service_clone.update_video_status(&video_id, VideoStatus::Failed).await {
+                        log::error!("❌ Failed to update video status to failed: {}", update_err);
+                    }
+                }
             }
         });
 

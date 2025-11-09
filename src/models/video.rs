@@ -132,6 +132,37 @@ pub struct PaginationMeta {
     pub has_previous: bool,
 }
 
+impl VideoResponse {
+    pub fn from_video_with_gcs_urls(video: Video, gcs_service: &crate::services::GcsService) -> Self {
+        let status = video.get_status();
+        
+        let hls_stream_url = video.hls_playlist_path.as_ref().map(|path| {
+            gcs_service.get_public_url(path)
+        });
+        
+        let thumbnail_url = video.thumbnail_path.as_ref().map(|path| {
+            gcs_service.get_public_url(path)
+        });
+
+        VideoResponse {
+            id: video.id,
+            title: video.title,
+            description: video.description,
+            filename: video.filename,
+            file_size: video.file_size,
+            duration: video.duration,
+            thumbnail_path: video.thumbnail_path,
+            hls_playlist_path: video.hls_playlist_path,
+            hls_stream_url,
+            thumbnail_url,
+            status,
+            user_id: video.user_id,
+            created_at: video.created_at.unwrap_or_default(),
+            updated_at: video.updated_at.unwrap_or_default(),
+        }
+    }
+}
+
 impl From<Video> for VideoResponse {
     fn from(video: Video) -> Self {
         let video_id = video.id;

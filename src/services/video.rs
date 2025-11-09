@@ -1,4 +1,5 @@
 use crate::models::{Video, CreateVideoRequest, VideoResponse, VideoStatus, PaginatedResponse, PaginationMeta};
+use super::GcsService;
 use sqlx::PgPool;
 use uuid::Uuid;
 use anyhow::Result;
@@ -52,7 +53,7 @@ impl VideoService {
         Ok(video)
     }
 
-    pub async fn list_videos(&self, user_id: Option<Uuid>, limit: i64, offset: i64) -> Result<PaginatedResponse<VideoResponse>> {
+    pub async fn list_videos(&self, user_id: Option<Uuid>, limit: i64, offset: i64, gcs_service: &GcsService) -> Result<PaginatedResponse<VideoResponse>> {
         let videos = if let Some(user_id) = user_id {
             sqlx::query_as!(
                 Video,
@@ -94,7 +95,7 @@ impl VideoService {
         let current_page = (offset / limit) + 1;
 
         Ok(PaginatedResponse {
-            data: videos.into_iter().map(|v| v.into()).collect(),
+            data: videos.into_iter().map(|v| VideoResponse::from_video_with_gcs_urls(v, gcs_service)).collect(),
             pagination: PaginationMeta {
                 total: final_total,
                 limit,
@@ -120,7 +121,12 @@ impl VideoService {
     }
 
     pub async fn update_video_metadata(&self, video_id: &Uuid, duration: Option<i32>, thumbnail_path: Option<String>, hls_playlist_path: Option<String>) -> Result<()> {
-        sqlx::query!(
+        log::info!("🚀 Updating video metadata for video_id: {}", video_id);
+        log::info!("🔹 Duration: {:?}", duration);
+        log::info!("🔹 Thumbnail path: {:?}", thumbnail_path);
+        log::info!("🔹 HLS playlist path: {:?}", hls_playlist_path);
+
+        let result = sqlx::query!(
             "UPDATE videos SET duration = $1, thumbnail_path = $2, hls_playlist_path = $3, updated_at = NOW() WHERE id = $4",
             duration,
             thumbnail_path,
@@ -129,6 +135,12 @@ impl VideoService {
         )
         .execute(&self.pool)
         .await?;
+
+        log::info!("✅ Database update result: {} rows affected", result.rows_affected());
+        
+        if result.rows_affected() == 0 {
+            log::warn!("⚠️ No rows were updated! Video ID {} might not exist", video_id);
+        }
 
         Ok(())
     }
