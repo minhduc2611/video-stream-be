@@ -1,7 +1,7 @@
 pub mod auth;
-pub mod videos;
 pub mod health;
+pub mod videos;
 
 pub use auth::*;
-pub use videos::*;
 pub use health::*;
+pub use videos::*;

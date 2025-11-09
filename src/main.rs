@@ -3,12 +3,14 @@ use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenv::dotenv;
 use std::env;
 
+mod app_state;
 mod handlers;
 mod middleware;
 mod models;
 mod services;
 mod utils;
 
+use app_state::AppState;
 use handlers::{auth, videos};
 use middleware::auth_middleware;
 use services::database;
@@ -34,6 +36,10 @@ async fn main() -> std::io::Result<()> {
 
     log::info!("Starting server on port {}", port);
 
+    let app_state = AppState::initialize(pool.clone())
+        .await
+        .expect("Failed to initialize application state");
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
@@ -42,7 +48,7 @@ async fn main() -> std::io::Result<()> {
             .max_age(3600);
 
         App::new()
-            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(app_state.clone()))
             .wrap(cors)
             .wrap(Logger::default())
             .service(

@@ -1,9 +1,11 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use chrono::{DateTime, Utc};
+use std::str::FromStr;
 use uuid::Uuid;
 use validator::Validate;
-use std::str::FromStr;
+
+use crate::services::CloudStorageService;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Video {
@@ -25,11 +27,12 @@ pub struct Video {
 
 impl Video {
     pub fn get_status(&self) -> VideoStatus {
-        self.status.as_ref()
+        self.status
+            .as_ref()
             .and_then(|s| VideoStatus::from_str(s).ok())
             .unwrap_or(VideoStatus::Failed)
     }
-    
+
     pub fn set_status(&mut self, status: VideoStatus) {
         self.status = Some(status.to_string());
     }
@@ -133,16 +136,21 @@ pub struct PaginationMeta {
 }
 
 impl VideoResponse {
-    pub fn from_video_with_gcs_urls(video: Video, gcs_service: &crate::services::GcsService) -> Self {
+    pub fn from_video_with_storage(
+        video: Video,
+        storage_service: &(dyn CloudStorageService + Send + Sync),
+    ) -> Self {
         let status = video.get_status();
-        
-        let hls_stream_url = video.hls_playlist_path.as_ref().map(|path| {
-            gcs_service.get_public_url(path)
-        });
-        
-        let thumbnail_url = video.thumbnail_path.as_ref().map(|path| {
-            gcs_service.get_public_url(path)
-        });
+
+        let hls_stream_url = video
+            .hls_playlist_path
+            .as_ref()
+            .map(|path| storage_service.get_public_url(path));
+
+        let thumbnail_url = video
+            .thumbnail_path
+            .as_ref()
+            .map(|path| storage_service.get_public_url(path));
 
         VideoResponse {
             id: video.id,
@@ -167,14 +175,16 @@ impl From<Video> for VideoResponse {
     fn from(video: Video) -> Self {
         let video_id = video.id;
         let status = video.get_status();
-        
-        let hls_stream_url = video.hls_playlist_path.as_ref().map(|_| {
-            format!("/api/v1/videos/{}/stream/playlist.m3u8", video_id)
-        });
-        
-        let thumbnail_url = video.thumbnail_path.as_ref().map(|_| {
-            format!("/api/v1/videos/{}/thumbnail", video_id)
-        });
+
+        let hls_stream_url = video
+            .hls_playlist_path
+            .as_ref()
+            .map(|_| format!("/api/v1/videos/{}/stream/playlist.m3u8", video_id));
+
+        let thumbnail_url = video
+            .thumbnail_path
+            .as_ref()
+            .map(|_| format!("/api/v1/videos/{}/thumbnail", video_id));
 
         VideoResponse {
             id: video.id,

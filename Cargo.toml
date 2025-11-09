@@ -67,3 +67,4 @@ futures-util = "0.3"
 # Random number generation
 rand = "0.8"
 bytes = "1.10.1"
+async-trait = "0.1"

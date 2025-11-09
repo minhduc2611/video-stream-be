@@ -40,10 +40,15 @@ impl StorageService {
         Ok(())
     }
 
-    pub async fn save_uploaded_file(&self, video_id: &Uuid, filename: &str, data: &[u8]) -> Result<String> {
+    pub async fn save_uploaded_file(
+        &self,
+        video_id: &Uuid,
+        filename: &str,
+        data: &[u8],
+    ) -> Result<String> {
         let file_path = self.get_video_path(video_id, filename);
         let parent_dir = Path::new(&file_path).parent().unwrap();
-        
+
         tokio::fs::create_dir_all(parent_dir).await?;
         tokio::fs::write(&file_path, data).await?;
 
@@ -51,7 +56,12 @@ impl StorageService {
         Ok(file_path)
     }
 
-    pub async fn save_video_file(&self, video_id: &Uuid, filename: &str, data: &[u8]) -> Result<String> {
+    pub async fn save_video_file(
+        &self,
+        video_id: &Uuid,
+        filename: &str,
+        data: &[u8],
+    ) -> Result<String> {
         self.save_uploaded_file(video_id, filename, data).await
     }
 

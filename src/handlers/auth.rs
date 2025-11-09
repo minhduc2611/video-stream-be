@@ -1,38 +1,53 @@
 use actix_web::{web, HttpResponse, Result};
-use sqlx::PgPool;
-use std::env;
+use std::sync::Arc;
 use validator::Validate;
 
-use crate::models::{AuthResponse, CreateUserRequest, GoogleAuthRequest, LoginRequest, UserResponse};
-use crate::services::{AuthService, GoogleAuthService};
+use crate::app_state::AppState;
+use crate::models::{
+    AuthResponse, CreateUserRequest, GoogleAuthRequest, LoginRequest, UserResponse,
+};
+use crate::services::{AuthServiceTrait, GoogleAuthServiceTrait};
 use crate::utils::response::ApiResponse;
 
 pub async fn register(
-    pool: web::Data<PgPool>,
+    app_state: web::Data<AppState>,
     request: web::Json<CreateUserRequest>,
 ) -> Result<HttpResponse> {
     // Validate request
     if let Err(validation_errors) = request.validate() {
-        return Ok(HttpResponse::BadRequest().json(ApiResponse::<AuthResponse>::error(
-            "Validation failed",
-            Some(validation_errors.field_errors().into_iter().map(|(k, v)| (k.to_string(), v.into_iter().map(|e| e.to_string()).collect())).collect()),
-        )));
+        return Ok(
+            HttpResponse::BadRequest().json(ApiResponse::<AuthResponse>::error(
+                "Validation failed",
+                Some(
+                    validation_errors
+                        .field_errors()
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k.to_string(),
+                                v.into_iter().map(|e| e.to_string()).collect(),
+                            )
+                        })
+                        .collect(),
+                ),
+            )),
+        );
     }
 
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-    let auth_service = AuthService::new(pool.get_ref().clone(), jwt_secret);
+    let auth_service = Arc::clone(&app_state.auth_service);
 
     match auth_service.register(request.into_inner()).await {
         Ok(auth_response) => Ok(HttpResponse::Created().json(ApiResponse::success(auth_response))),
         Err(e) => {
             log::error!("Registration error: {}", e);
-            Ok(HttpResponse::BadRequest().json(ApiResponse::<AuthResponse>::error(&e.to_string(), None)))
+            Ok(HttpResponse::BadRequest()
+                .json(ApiResponse::<AuthResponse>::error(&e.to_string(), None)))
         }
     }
 }
 
 pub async fn login(
-    pool: web::Data<PgPool>,
+    app_state: web::Data<AppState>,
     request: web::Json<LoginRequest>,
 ) -> Result<HttpResponse> {
     // Validate request
@@ -56,8 +71,7 @@ pub async fn login(
         );
     }
 
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-    let auth_service = AuthService::new(pool.get_ref().clone(), jwt_secret);
+    let auth_service = Arc::clone(&app_state.auth_service);
 
     match auth_service.login(request.into_inner()).await {
         Ok(auth_response) => Ok(HttpResponse::Ok().json(ApiResponse::success(auth_response))),
@@ -80,12 +94,11 @@ pub async fn logout() -> Result<HttpResponse> {
 }
 
 pub async fn me(
-    pool: web::Data<PgPool>,
+    app_state: web::Data<AppState>,
     user_id: web::ReqData<uuid::Uuid>,
 ) -> Result<HttpResponse> {
     log::info!("User ID 1: {:?}", user_id.clone().into_inner());
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-    let auth_service = AuthService::new(pool.get_ref().clone(), jwt_secret);
+    let auth_service = Arc::clone(&app_state.auth_service);
     log::info!("User ID 2: {}", user_id.clone().into_inner());
     match auth_service.get_user_by_id(&user_id.into_inner()).await {
         Ok(Some(user)) => {
@@ -107,10 +120,10 @@ pub async fn me(
 }
 
 pub async fn google_auth(
-    pool: web::Data<PgPool>,
+    app_state: web::Data<AppState>,
     request: web::Json<GoogleAuthRequest>,
 ) -> Result<HttpResponse> {
-    let google_auth_service = GoogleAuthService::new(pool.get_ref().clone());
+    let google_auth_service = Arc::clone(&app_state.google_auth_service);
 
     // Verify Google token and get user info
     match google_auth_service

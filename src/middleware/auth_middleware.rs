@@ -1,4 +1,4 @@
-use actix_utils::future::{Ready, ready};
+use actix_utils::future::{ready, Ready};
 use actix_web::{
     body::{EitherBody, MessageBody},
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
@@ -6,10 +6,13 @@ use actix_web::{
 };
 
 use futures_util::future::LocalBoxFuture;
-use std::{env, rc::Rc};
+use std::rc::Rc;
 use uuid::Uuid;
 
-use crate::services::AuthService;
+use std::sync::Arc;
+
+use crate::app_state::AppState;
+use crate::services::AuthServiceTrait;
 use crate::utils::response::ApiResponse;
 
 pub struct AuthMiddleware;
@@ -53,6 +56,16 @@ where
         let service = self.service.clone();
 
         Box::pin(async move {
+            let app_state = match req.app_data::<actix_web::web::Data<AppState>>().cloned() {
+                Some(state) => state,
+                None => {
+                    log::error!("Application state missing in request context");
+                    let res = HttpResponse::InternalServerError()
+                        .json(ApiResponse::<()>::error("Internal server error", None));
+                    return Ok(req.into_response(res).map_into_right_body());
+                }
+            };
+
             // Extract token from Authorization header
             let auth_header = req.headers().get("Authorization");
             log::info!("Auth header: {:?}", auth_header);
@@ -60,15 +73,8 @@ where
                 if let Ok(auth_str) = auth_header.to_str() {
                     if auth_str.starts_with("Bearer ") {
                         let token = &auth_str[7..]; // Remove "Bearer " prefix
-                        
-                        let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-                        let auth_service = AuthService::new(
-                            req.app_data::<actix_web::web::Data<sqlx::PgPool>>()
-                                .unwrap()
-                                .get_ref()
-                                .clone(),
-                            jwt_secret,
-                        );
+
+                        let auth_service = Arc::clone(&app_state.auth_service);
 
                         match auth_service.verify_token(token) {
                             Ok(claims) => {
@@ -87,20 +93,27 @@ where
                             }
                         }
                     } else {
-                        let res = HttpResponse::Unauthorized()
-                            .json(ApiResponse::<()>::error("Invalid authorization header format", None));
+                        let res = HttpResponse::Unauthorized().json(ApiResponse::<()>::error(
+                            "Invalid authorization header format",
+                            None,
+                        ));
                         return Ok(req.into_response(res).map_into_right_body());
                     }
                 } else {
-                    let res = HttpResponse::Unauthorized()
-                        .json(ApiResponse::<()>::error("Invalid authorization header", None));
+                    let res = HttpResponse::Unauthorized().json(ApiResponse::<()>::error(
+                        "Invalid authorization header",
+                        None,
+                    ));
                     return Ok(req.into_response(res).map_into_right_body());
                 }
             } else {
-                let res = HttpResponse::Unauthorized().json(ApiResponse::<()>::error("Authorization header missing", None));
+                let res = HttpResponse::Unauthorized().json(ApiResponse::<()>::error(
+                    "Authorization header missing",
+                    None,
+                ));
                 return Ok(req.into_response(res).map_into_right_body());
             }
-            
+
             let res = service.call(req).await?;
             Ok(res.map_into_left_body())
         })

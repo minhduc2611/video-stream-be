@@ -4256,6 +4256,7 @@ dependencies = [
  "actix-utils",
  "actix-web",
  "anyhow",
+ "async-trait",
  "bcrypt",
  "bytes",
  "chrono",
