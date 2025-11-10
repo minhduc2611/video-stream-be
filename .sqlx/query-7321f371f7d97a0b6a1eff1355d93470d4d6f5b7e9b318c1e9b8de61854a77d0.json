@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    COUNT(*)::bigint AS \"sample_count!\",\n                    AVG(first_frame_ms)::bigint AS avg_first_frame_ms,\n                    AVG(total_startup_ms)::bigint AS avg_total_startup_ms,\n                    AVG(buffering_events)::double precision AS avg_buffering_events\n                FROM playback_metrics\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sample_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "avg_first_frame_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "avg_total_startup_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "avg_buffering_events",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "7321f371f7d97a0b6a1eff1355d93470d4d6f5b7e9b318c1e9b8de61854a77d0"
+}

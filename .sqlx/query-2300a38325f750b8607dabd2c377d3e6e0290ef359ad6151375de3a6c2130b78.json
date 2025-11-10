@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    COUNT(*)::bigint AS \"sample_count!\",\n                    AVG(latency_ms)::bigint AS avg_latency_ms,\n                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms)::bigint AS p95_latency_ms,\n                    PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms)::bigint AS p99_latency_ms\n                FROM api_latency_metrics\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sample_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "avg_latency_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "p95_latency_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "p99_latency_ms",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2300a38325f750b8607dabd2c377d3e6e0290ef359ad6151375de3a6c2130b78"
+}

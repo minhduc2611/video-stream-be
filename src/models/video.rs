@@ -79,6 +79,14 @@ pub struct CreateVideoRequest {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateVideoRequest {
+    #[validate(length(min = 1, max = 200))]
+    pub title: Option<String>,
+    #[validate(length(max = 1000))]
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HlsStreamingResponse {
     pub video_id: Uuid,
@@ -176,10 +184,7 @@ impl From<Video> for VideoResponse {
         let video_id = video.id;
         let status = video.get_status();
 
-        let hls_stream_url = video
-            .hls_playlist_path
-            .as_ref()
-            .map(|_| format!("/api/v1/videos/{}/stream/playlist.m3u8", video_id));
+        let hls_stream_url = None;
 
         let thumbnail_url = video
             .thumbnail_path

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO video_processing_metrics\n                (benchmark_run_id, video_id, step, duration_ms, cpu_avg, mem_peak)\n                VALUES ($1, $2, $3, $4, $5, $6)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8",
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba93a62362907d010ad48097c1edfe92dcb5486ea121ccef9c68d5217d36b84e"
+}

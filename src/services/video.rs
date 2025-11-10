@@ -35,6 +35,13 @@ pub trait VideoServiceTrait: Send + Sync {
     ) -> Result<()>;
 
     async fn delete_video(&self, video_id: &Uuid, user_id: &Uuid) -> Result<bool>;
+
+    async fn update_video_details(
+        &self,
+        video_id: &Uuid,
+        title: String,
+        description: Option<String>,
+    ) -> Result<Video>;
 }
 
 #[derive(Clone)]
@@ -202,5 +209,24 @@ impl VideoServiceTrait for VideoService {
         .await?;
 
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn update_video_details(
+        &self,
+        video_id: &Uuid,
+        title: String,
+        description: Option<String>,
+    ) -> Result<Video> {
+        let updated_video = sqlx::query_as!(
+            Video,
+            "UPDATE videos SET title = $1, description = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
+            title,
+            description,
+            video_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(updated_video)
     }
 }

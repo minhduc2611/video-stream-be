@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    COALESCE(COUNT(DISTINCT benchmark_run_id), 0)::bigint AS \"run_count!\",\n                    AVG(total_duration_ms)::bigint AS avg_total_duration_ms,\n                    MIN(total_duration_ms)::bigint AS fastest_run_ms,\n                    MAX(total_duration_ms)::bigint AS slowest_run_ms\n                FROM (\n                    SELECT benchmark_run_id, SUM(COALESCE(duration_ms, 0)) AS total_duration_ms\n                    FROM video_processing_metrics\n                    GROUP BY benchmark_run_id\n                ) totals\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "run_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "avg_total_duration_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "fastest_run_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "slowest_run_ms",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d73ed39371ff0d0dc984d519e2a1324b998016025fd3c7b964a769c24464229b"
+}

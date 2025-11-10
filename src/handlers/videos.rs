@@ -1,16 +1,24 @@
 use actix_multipart::Multipart;
-use actix_web::{web, HttpResponse, Result};
+use actix_web::{web, HttpRequest, HttpResponse, Result};
 use futures_util::TryStreamExt;
 use serde::Deserialize;
+use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::app_state::AppState;
-use crate::models::{CreateVideoRequest, HlsStreamingResponse, VideoResponse, VideoUploadResponse};
-use crate::services::{CloudStorageService, VideoProcessingService};
+use crate::models::{
+    CreateVideoRequest, HlsStreamingResponse, UpdateVideoRequest, VideoResponse,
+    VideoUploadResponse,
+};
+use crate::services::VideoProcessingService;
 use crate::utils::response::ApiResponse;
 
 pub async fn upload_video(
+    req: HttpRequest,
     app_state: web::Data<AppState>,
     user_id: web::ReqData<Uuid>,
     mut payload: Multipart,
@@ -18,6 +26,8 @@ pub async fn upload_video(
     let video_service = Arc::clone(&app_state.video_service);
     let storage_service = Arc::clone(&app_state.storage_service);
     let processing_service = Arc::clone(&app_state.video_processing_service);
+    let metrics_service = Arc::clone(&app_state.metrics_service);
+    let handler_timer = Instant::now();
     let user_id_value = user_id.into_inner();
 
     let mut title = String::new();
@@ -140,60 +150,166 @@ pub async fn upload_video(
 
     let video_id: Uuid = video.id;
 
-    log::info!("Saving video file to GCS");
-    // Save video file to GCS directly from memory
-    let storage_video_path = storage_service.get_video_path(&video_id, &filename);
+    log::info!("Queuing video upload and processing tasks");
 
-    // Clone file data for processing since we need it for both GCS upload and processing
+    let upload_metadata = json!({
+        "video_id": video_id,
+        "user_id": user_id_value,
+        "filename": filename,
+        "original_filename": original_filename,
+        "file_size": file_size,
+        "route": req.path(),
+        "method": req.method().as_str(),
+    });
+
+    let upload_benchmark_run_id = match metrics_service
+        .create_benchmark_run("video_upload", Some(upload_metadata))
+        .await
+    {
+        Ok(id) => Some(id),
+        Err(err) => {
+            log::warn!(
+                "Failed to create upload benchmark run for {}: {}",
+                video_id,
+                err
+            );
+            None
+        }
+    };
+
+    if let Err(err) = metrics_service
+        .record_video_processing_step(
+            upload_benchmark_run_id,
+            Some(video_id),
+            "create_video_record",
+            None,
+            None,
+            None,
+        )
+        .await
+    {
+        log::warn!(
+            "Failed to record create_video_record metric for {}: {}",
+            video_id,
+            err
+        );
+    }
+
     let file_data_for_processing = file_data.clone();
+    let job_video_service = Arc::clone(&video_service);
+    let job_storage_service = Arc::clone(&storage_service);
+    let job_processing_service = Arc::clone(&processing_service);
+    let job_metrics_service = Arc::clone(&metrics_service);
+    let job_filename = filename.clone();
+    let job_user_id = user_id_value;
+    let job_video_id = video_id;
+    let job_file_data = file_data;
+    let job_benchmark_run_id = upload_benchmark_run_id;
 
-    if let Err(e) = storage_service
-        .upload_file_data(file_data, &storage_video_path)
-        .await
-    {
-        log::error!("Failed to upload video file to storage: {}", e);
-        // Clean up database record
-        let _ = video_service.delete_video(&video_id, &user_id_value).await;
-        return Ok(
-            HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
-                "Failed to upload video file",
+    actix_web::rt::spawn(async move {
+        let storage_video_path = job_storage_service.get_video_path(&job_video_id, &job_filename);
+
+        let upload_timer = Instant::now();
+        if let Err(e) = job_storage_service
+            .upload_file_data(job_file_data, &storage_video_path)
+            .await
+        {
+            log::error!("Failed to upload video file to storage: {}", e);
+            let _ = job_video_service
+                .delete_video(&job_video_id, &job_user_id)
+                .await;
+            if let Err(err) = job_metrics_service
+                .record_video_processing_step(
+                    job_benchmark_run_id,
+                    Some(job_video_id),
+                    "upload_original_video_failed",
+                    Some(upload_timer.elapsed().as_millis() as i64),
+                    None,
+                    None,
+                )
+                .await
+            {
+                log::warn!(
+                    "Failed to record upload_original_video_failed metric for {}: {}",
+                    job_video_id,
+                    err
+                );
+            }
+            return;
+        }
+        if let Err(err) = job_metrics_service
+            .record_video_processing_step(
+                job_benchmark_run_id,
+                Some(job_video_id),
+                "upload_original_video",
+                Some(upload_timer.elapsed().as_millis() as i64),
                 None,
-            )),
-        );
-    }
-
-    log::info!("Starting video processing in background");
-    // Start video processing in background
-    log::info!("Processing video");
-    if let Err(e) = processing_service
-        .process_video(video_id, file_data_for_processing, &filename)
-        .await
-    {
-        log::error!("Failed to start video processing: {}", e);
-        // Update status to failed
-        let _ = video_service
-            .update_video_status(&video_id, crate::models::VideoStatus::Failed)
-            .await;
-        return Ok(
-            HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
-                "Failed to start video processing",
                 None,
-            )),
-        );
-    }
+            )
+            .await
+        {
+            log::warn!(
+                "Failed to record upload_original_video metric for {}: {}",
+                job_video_id,
+                err
+            );
+        }
 
-    // Return success response
+        log::info!("Starting video processing task for {}", job_video_id);
+        if let Err(e) = job_processing_service
+            .process_video(
+                job_video_id,
+                file_data_for_processing,
+                &job_filename,
+                job_benchmark_run_id,
+            )
+            .await
+        {
+            log::error!("Failed to start video processing: {}", e);
+            if let Err(update_err) = job_video_service
+                .update_video_status(&job_video_id, crate::models::VideoStatus::Failed)
+                .await
+            {
+                log::error!(
+                    "Failed to update video status to failed for {}: {}",
+                    job_video_id,
+                    update_err
+                );
+            }
+        }
+    });
+
     let response = VideoUploadResponse {
         video_id,
         title,
         description,
-        status: crate::models::VideoStatus::Processing,
-        hls_files_count: 0, // Will be updated after processing
+        status: crate::models::VideoStatus::Uploading,
+        hls_files_count: 0,
         total_size: file_size as i64,
         created_at: video.created_at.unwrap_or_default(),
     };
 
-    Ok(HttpResponse::Ok().json(ApiResponse::success(response)))
+    let http_response = HttpResponse::Accepted().json(ApiResponse::success(response));
+
+    if let Err(err) = metrics_service
+        .record_video_processing_step(
+            upload_benchmark_run_id,
+            Some(video_id),
+            "upload_handler_complete",
+            Some(handler_timer.elapsed().as_millis() as i64),
+            None,
+            None,
+        )
+        .await
+    {
+        log::warn!(
+            "Failed to record upload_handler_complete metric for {}: {}",
+            video_id,
+            err
+        );
+    }
+
+    Ok(http_response)
 }
 
 // Video list query parameters
@@ -344,96 +460,6 @@ pub async fn stream_video(
     }
 }
 
-/// Serve HLS files (.m3u8 and .ts files)
-pub async fn serve_hls_file(
-    app_state: web::Data<AppState>,
-    user_id: web::ReqData<Uuid>,
-    path: web::Path<(Uuid, String)>,
-) -> Result<HttpResponse> {
-    let video_service = Arc::clone(&app_state.video_service);
-    let storage_service = Arc::clone(&app_state.storage_service);
-
-    let user_id_value = user_id.into_inner();
-    let (video_id, filename) = path.into_inner();
-
-    // Verify video exists and user has access
-    match video_service.get_video_by_id(&video_id).await {
-        Ok(Some(video)) => {
-            if video.user_id != user_id_value {
-                return Ok(HttpResponse::Forbidden()
-                    .json(ApiResponse::<String>::error("Access denied", None)));
-            }
-
-            // Check if video is ready for streaming
-            if video.get_status() != crate::models::VideoStatus::Ready {
-                return Ok(
-                    HttpResponse::BadRequest().json(ApiResponse::<String>::error(
-                        "Video is not ready for streaming",
-                        None,
-                    )),
-                );
-            }
-        }
-        Ok(None) => {
-            return Ok(HttpResponse::NotFound()
-                .json(ApiResponse::<String>::error("Video not found", None)))
-        }
-        Err(e) => {
-            log::error!("Failed to verify video access: {}", e);
-            return Ok(
-                HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
-                    "Failed to verify video access",
-                    None,
-                )),
-            );
-        }
-    }
-
-    // Construct GCS path for the HLS file
-    let gcs_path = format!("hls/{}/{}", video_id, filename);
-
-    // Download file from GCS
-    let temp_path = format!("/tmp/hls_{}_{}", video_id, filename);
-    if let Err(e) = storage_service.download_file(&gcs_path, &temp_path).await {
-        log::error!("Failed to download HLS file from storage: {}", e);
-        return Ok(
-            HttpResponse::NotFound().json(ApiResponse::<String>::error("HLS file not found", None))
-        );
-    }
-
-    // Determine content type based on file extension
-    let content_type = if filename.ends_with(".m3u8") {
-        "application/vnd.apple.mpegurl"
-    } else if filename.ends_with(".ts") {
-        "video/mp2t"
-    } else {
-        "application/octet-stream"
-    };
-
-    // Read file content
-    match tokio::fs::read(&temp_path).await {
-        Ok(content) => {
-            // Clean up temp file
-            let _ = tokio::fs::remove_file(&temp_path).await;
-
-            Ok(HttpResponse::Ok()
-                .content_type(content_type)
-                .append_header(("Cache-Control", "public, max-age=3600"))
-                .body(content))
-        }
-        Err(e) => {
-            log::error!("Failed to read HLS file: {}", e);
-            let _ = tokio::fs::remove_file(&temp_path).await;
-            Ok(
-                HttpResponse::InternalServerError().json(ApiResponse::<String>::error(
-                    "Failed to read HLS file",
-                    None,
-                )),
-            )
-        }
-    }
-}
-
 /// Get video thumbnail
 pub async fn get_thumbnail(
     app_state: web::Data<AppState>,
@@ -523,14 +549,13 @@ pub async fn delete_video(
     let user_id_value = user_id.into_inner();
     let video_id = path.into_inner();
 
-    // Get video details before deletion
-    let video = match video_service.get_video_by_id(&video_id).await {
+    // Get video details before deletion to confirm ownership
+    match video_service.get_video_by_id(&video_id).await {
         Ok(Some(video)) => {
             if video.user_id != user_id_value {
                 return Ok(HttpResponse::Forbidden()
                     .json(ApiResponse::<String>::error("Access denied", None)));
             }
-            video
         }
         Ok(None) => {
             return Ok(HttpResponse::NotFound()
@@ -559,17 +584,117 @@ pub async fn delete_video(
         }
     }
 
-    // Delete files from GCS (optional - files will be cleaned up by GCS lifecycle policies)
-    let video_path = storage_service.get_video_path(&video_id, &video.filename);
-    let _ = storage_service.delete_file(&video_path).await; // Ignore errors for cleanup
-
-    if let Some(hls_path) = &video.hls_playlist_path {
-        let _ = storage_service.delete_file(hls_path).await; // Ignore errors for cleanup
-    }
-
-    if let Some(thumbnail_path) = &video.thumbnail_path {
-        let _ = storage_service.delete_file(thumbnail_path).await; // Ignore errors for cleanup
+    let folder_prefix = video_id.to_string();
+    if let Err(e) = storage_service.delete_folder(&folder_prefix).await {
+        log::warn!(
+            "Failed to delete storage folder for video {}: {}",
+            video_id,
+            e
+        );
     }
 
     Ok(HttpResponse::Ok().json(ApiResponse::success("Video deleted successfully")))
+}
+
+/// Update video details (title and description)
+pub async fn update_video(
+    app_state: web::Data<AppState>,
+    user_id: web::ReqData<Uuid>,
+    path: web::Path<Uuid>,
+    payload: web::Json<UpdateVideoRequest>,
+) -> Result<HttpResponse> {
+    let video_service = Arc::clone(&app_state.video_service);
+    let storage_service = Arc::clone(&app_state.storage_service);
+
+    let user_id_value = user_id.into_inner();
+    let video_id = path.into_inner();
+    let update_request = payload.into_inner();
+
+    if update_request.title.is_none() && update_request.description.is_none() {
+        return Ok(
+            HttpResponse::BadRequest().json(ApiResponse::<String>::error(
+                "At least one field (title or description) must be provided",
+                None,
+            )),
+        );
+    }
+
+    if let Err(validation_errors) = update_request.validate() {
+        let mut error_map: HashMap<String, Vec<String>> = HashMap::new();
+
+        for (field, errors) in validation_errors.field_errors() {
+            let codes = errors
+                .iter()
+                .map(|error| error.code.to_string())
+                .collect::<Vec<String>>();
+            error_map.insert(field.to_string(), codes);
+        }
+
+        return Ok(
+            HttpResponse::BadRequest().json(ApiResponse::<String>::error(
+                "Invalid data provided",
+                Some(error_map),
+            )),
+        );
+    }
+
+    let existing_video = match video_service.get_video_by_id(&video_id).await {
+        Ok(Some(video)) => {
+            if video.user_id != user_id_value {
+                return Ok(HttpResponse::Forbidden()
+                    .json(ApiResponse::<String>::error("Access denied", None)));
+            }
+            video
+        }
+        Ok(None) => {
+            return Ok(HttpResponse::NotFound()
+                .json(ApiResponse::<String>::error("Video not found", None)))
+        }
+        Err(e) => {
+            log::error!("Failed to fetch video for update: {}", e);
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiResponse::<String>::error("Failed to fetch video", None)));
+        }
+    };
+
+    let UpdateVideoRequest { title, description } = update_request;
+
+    let updated_title = title
+        .and_then(|t| {
+            let trimmed = t.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .unwrap_or_else(|| existing_video.title.clone());
+
+    let final_description = match description {
+        Some(desc) => {
+            let trimmed = desc.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        None => existing_video.description.clone(),
+    };
+
+    match video_service
+        .update_video_details(&video_id, updated_title, final_description)
+        .await
+    {
+        Ok(updated_video) => {
+            let response =
+                VideoResponse::from_video_with_storage(updated_video, storage_service.as_ref());
+            Ok(HttpResponse::Ok().json(ApiResponse::success(response)))
+        }
+        Err(e) => {
+            log::error!("Failed to update video details: {}", e);
+            Ok(HttpResponse::InternalServerError()
+                .json(ApiResponse::<String>::error("Failed to update video", None)))
+        }
+    }
 }

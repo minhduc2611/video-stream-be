@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    route,\n                    method,\n                    COUNT(*)::bigint AS \"sample_count!\",\n                    AVG(latency_ms)::bigint AS avg_latency_ms,\n                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms)::bigint AS p95_latency_ms,\n                    PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms)::bigint AS p99_latency_ms,\n                    AVG(concurrent_requests)::double precision AS avg_concurrent\n                FROM api_latency_metrics\n                GROUP BY route, method\n                ORDER BY p95_latency_ms DESC NULLS LAST, \"sample_count!\" DESC\n                LIMIT 15\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "route",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "method",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "sample_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "avg_latency_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "p95_latency_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "p99_latency_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "avg_concurrent",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "98fb6449c38a9bb49157abf6de1275490623e45dfea10095a103e801fa45d406"
+}

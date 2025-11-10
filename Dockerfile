@@ -1,68 +1,61 @@
-# Use the official Rust image as the base image
-FROM rust:1.70-slim as builder
+# Build stage
+FROM rust:1.88.0 AS builder
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory
+# Create app directory
 WORKDIR /app
 
-# Copy the Cargo.toml and Cargo.lock files
+# Copy dependency files first for better layer caching
 COPY Cargo.toml Cargo.lock ./
+COPY rust-toolchain.toml ./
 
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies (this layer will be cached if Cargo.toml doesn't change)
+# Build dependencies (this layer will be cached unless dependencies change)
 RUN cargo build --release
-
-# Remove the dummy main.rs
 RUN rm src/main.rs
 
-# Copy the source code
+# Copy source code
 COPY src ./src
+COPY .env .env
 COPY migrations ./migrations
 
-# Build the application
-RUN cargo build --release
+# Build the application in release mode
+# Touch main.rs to ensure it's rebuilt
+RUN cargo install sqlx-cli --no-default-features --features postgres,rustls
+RUN cargo sqlx prepare
+RUN touch src/main.rs && cargo build --release
 
-# Create the runtime image
-FROM debian:bullseye-slim
+# Runtime stage
+FROM debian:bookworm-slim AS runtime
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Install CA certificates and curl for health checks
+RUN apt-get update && \
+    apt-get install -y ca-certificates curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user
-RUN useradd -m -u 1000 appuser
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Set the working directory
+# Create app directory
 WORKDIR /app
 
-# Copy the binary from the builder stage
-COPY --from=builder /app/target/release/video-stream-be /app/video-stream-be
+# Copy the binary from builder stage
+COPY --from=builder /app/target/release/video-stream-be .
 
-# Copy migrations
-COPY --from=builder /app/migrations ./migrations
-
-# Create uploads directory
-RUN mkdir -p uploads && chown -R appuser:appuser /app
-
-# Switch to the non-root user
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
 USER appuser
 
-# Expose the port
+# Expose the port the app runs on
 EXPOSE 8080
 
-# Set environment variables
-ENV RUST_LOG=info
-ENV PORT=8080
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/ || exit 1
 
 # Run the application
-CMD ["./video-stream-be"]
+CMD ["./video-stream-be"] 

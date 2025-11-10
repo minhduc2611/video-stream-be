@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    COUNT(*)::bigint AS \"sample_count!\",\n                    AVG(startup_duration_ms)::bigint AS avg_startup_ms,\n                    MIN(startup_duration_ms)::bigint AS min_startup_ms,\n                    MAX(startup_duration_ms)::bigint AS max_startup_ms,\n                    AVG(startup_duration_ms) FILTER (WHERE cold_start)::bigint AS cold_start_avg_ms,\n                    AVG(startup_duration_ms) FILTER (WHERE NOT cold_start)::bigint AS warm_start_avg_ms,\n                    COALESCE(COUNT(*) FILTER (WHERE cold_start), 0)::bigint AS \"cold_start_count!\",\n                    COALESCE(COUNT(*) FILTER (WHERE NOT cold_start), 0)::bigint AS \"warm_start_count!\"\n                FROM server_startup_metrics\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sample_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "avg_startup_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "min_startup_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "max_startup_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "cold_start_avg_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "warm_start_avg_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "cold_start_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "warm_start_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "76f6dd437e04278b212f8b97a35a87ba937f6b25cd275b38cda0cc5a5d306a48"
+}

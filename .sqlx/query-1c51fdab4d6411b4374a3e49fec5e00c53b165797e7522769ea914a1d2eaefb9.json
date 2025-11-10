@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO server_startup_metrics\n                (benchmark_run_id, service_name, revision, cold_start, startup_duration_ms, context)\n                VALUES ($1, $2, $3, $4, $5, $6)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool",
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c51fdab4d6411b4374a3e49fec5e00c53b165797e7522769ea914a1d2eaefb9"
+}

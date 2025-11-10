@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    COALESCE(device_type, 'Unknown') AS \"device_type!\",\n                    COUNT(*)::bigint AS \"sample_count!\",\n                    AVG(first_frame_ms)::bigint AS avg_first_frame_ms,\n                    AVG(total_startup_ms)::bigint AS avg_total_startup_ms,\n                    AVG(buffering_events)::double precision AS avg_buffering_events\n                FROM playback_metrics\n                GROUP BY COALESCE(device_type, 'Unknown')\n                ORDER BY avg_total_startup_ms NULLS LAST, \"sample_count!\" DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "device_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "sample_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "avg_first_frame_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "avg_total_startup_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "avg_buffering_events",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "494e611fa4df54b31fa63cb5a6ce455107763678673ff4a80bfe99750fc5f67b"
+}

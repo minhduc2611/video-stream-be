@@ -12,7 +12,6 @@ use uuid::Uuid;
 use std::sync::Arc;
 
 use crate::app_state::AppState;
-use crate::services::AuthServiceTrait;
 use crate::utils::response::ApiResponse;
 
 pub struct AuthMiddleware;

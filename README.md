@@ -108,9 +108,28 @@ cargo test
 ```
 
 ## Deployment
+```
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t us-central1-docker.pkg.dev/video-streaming-473721/streaming-backend/video-stream-be:latest \
+  --push \
+  /Users/ducle/Desktop/streaming/video-stream-be
 
+
+# Authenticate docker with Google Cloud
+gcloud auth login
+gcloud config set project video-streaming-473721
+gcloud auth configure-docker us-central1-docker.pkg.dev
+# Create a repository (skip if it already exists)
+gcloud artifacts repositories create streaming-backend --repository-format=docker --location=us-central1 --description="Video stream backend"
+# Push
+docker push us-central1-docker.pkg.dev/video-streaming-473721/streaming-backend/video-stream-be:latest
+# Verify
+gcloud artifacts docker images list us-central1-docker.pkg.dev/video-streaming-473721/streaming-backend
+```
 The application is designed to be deployed with Docker. See the Dockerfile for containerization details.
 
 ## License
 
 MIT
+
