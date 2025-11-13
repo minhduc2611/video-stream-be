@@ -4,8 +4,7 @@ use anyhow::Result;
 use sqlx::PgPool;
 
 use crate::services::{
-    AuthService, AuthServiceTrait, CloudStorageService, GcsService, GoogleAuthService,
-    GoogleAuthServiceTrait, MetricsService, MetricsServiceTrait, VideoProcessingService,
+    AuthService, AuthServiceTrait, CloudStorageService, GcsService, MetricsService, MetricsServiceTrait, VideoProcessingService,
     VideoProcessingServiceTrait, VideoService, VideoServiceTrait,
 };
 
@@ -15,7 +14,6 @@ pub struct AppState {
     pub storage_service: Arc<dyn CloudStorageService>,
     pub video_processing_service: Arc<dyn VideoProcessingServiceTrait>,
     pub auth_service: Arc<dyn AuthServiceTrait>,
-    pub google_auth_service: Arc<dyn GoogleAuthServiceTrait>,
     pub metrics_service: Arc<dyn MetricsServiceTrait>,
 }
 
@@ -33,9 +31,6 @@ impl AppState {
         let auth_service: Arc<dyn AuthServiceTrait> =
             Arc::new(AuthService::new(pool.clone(), jwt_secret.clone()));
 
-        let google_auth_service: Arc<dyn GoogleAuthServiceTrait> =
-            Arc::new(GoogleAuthService::new(pool.clone(), jwt_secret.clone()));
-
         let video_processing_service: Arc<dyn VideoProcessingServiceTrait> =
             Arc::new(VideoProcessingService::new(
                 Arc::clone(&video_service),
@@ -48,7 +43,6 @@ impl AppState {
             storage_service,
             video_processing_service,
             auth_service,
-            google_auth_service,
             metrics_service,
         })
     }

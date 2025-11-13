@@ -1,0 +1,109 @@
+name: 'Build and Deploy to Cloud Run'
+on:
+  push:
+    branches:
+      - main
+env:
+  PROJECT_ID: 'video-streaming-473721'
+  REGION: 'europe-north1'
+  SERVICE: 'video-streaming-be'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/566310375218/locations/global/workloadIdentityPools/llm-identity-pool/providers/github-provider'
+  SERVICE_ACCOUNT: 'video-streaming-be-github-runner@video-streaming-473721.iam.gserviceaccount.com'
+jobs:
+  checkout:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.extract_sha.outputs.sha }}
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+      - name: 'Extract Commit SHA'
+        id: extract_sha
+        run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+  auth-and-build:
+    needs: checkout
+    runs-on: ubuntu-latest
+    outputs:
+      docker_image: ${{ steps.build.outputs.docker_image }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: 'Debug GitHub Context'
+        run: |
+          echo '${{secrets.SERVICE_ACCOUNT_JSON_CREDENTIALS}}'
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+      - id: auth
+        name: 'Authenticate to Google Cloud'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{env.SERVICE_ACCOUNT}}'
+          token_format: access_token
+          # credentials_json: '${{secrets.SERVICE_ACCOUNT_JSON_CREDENTIALS}}'
+      - name: Login to GCR
+        uses: docker/login-action@v3
+        with:
+          registry: gcr.io
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Verify config location
+        run: |
+          export DOCKER_CONFIG=/home/runner/.docker
+      - name: 'Build and Push Container'
+        id: build
+        run: |
+          DOCKER_IMAGE='gcr.io/${{ env.PROJECT_ID }}/video-streaming-be:latest'
+          docker build --platform linux/amd64 -t $DOCKER_IMAGE .
+          docker push $DOCKER_IMAGE
+          echo "docker_image=$DOCKER_IMAGE" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: auth-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - id: auth
+        name: 'Authenticate to Google Cloud'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{env.SERVICE_ACCOUNT}}'
+      - name: 'Build and Push Container'
+        run: |
+          echo '${{ needs.auth-and-build.outputs.docker_image }}'
+          echo 'JWT_SECRET: ${{ secrets.JWT_SECRET }}'
+          if [ -z "${{ secrets.JWT_SECRET }}" ]; then
+            echo "JWT_SECRET is empty or not set"
+          else
+            echo "JWT_SECRET is set (length: ${#JWT_SECRET})"
+          fi
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      - name: 'Deploy to Cloud Run'
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: '${{ env.SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: '${{ needs.auth-and-build.outputs.docker_image }}'
+          env_vars_update_strategy: overwrite
+          secrets: |
+              OPENAI_API_KEY=OPENAI_API_KEY:latest 
+              WEAVIATE_API_KEY=WEAVIATE_API_KEY:latest 
+              WEAVIATE_URL=WEAVIATE_URL:latest 
+              JWT_SECRET=JWT_SECRET:latest 
+              NEO4J_PASSWORD=NEO4J_PASSWORD:latest
+              NEO4J_URI=NEO4J_URI:latest
+              NEO4J_USER=NEO4J_USER:latest
+              SUPABASE_URL=SUPABASE_URL:latest
+              SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest
+              STRIPE_PUBLIC_KEY=STRIPE_PUBLIC_KEY:latest
+              STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest
+              TAVILY_API_KEY=TAVILY_API_KEY:latest
+              SERPER_API_KEY=SERPER_API_KEY:latest
+              NOTION_INTEGRATION_API_KEY=NOTION_INTEGRATION_API_KEY:latest
+              NOTION_FEEDBACK_DATABASE_ID=NOTION_FEEDBACK_DATABASE_ID:latest
+      - name: 'Show output'
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

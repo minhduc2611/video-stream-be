@@ -72,16 +72,14 @@ async fn main() -> std::io::Result<()> {
     }
 
     HttpServer::new(move || {
-        let cors = allowed_origins
-            .iter()
-            .fold(
-                Cors::default()
-                    .allow_any_method()
-                    .allow_any_header()
-                    .supports_credentials()
-                    .max_age(3600),
-                |cors, origin| cors.allowed_origin(origin),
-            );
+        let cors = allowed_origins.iter().fold(
+            Cors::default()
+                .allow_any_method()
+                .allow_any_header()
+                .supports_credentials()
+                .max_age(3600),
+            |cors, origin| cors.allowed_origin(origin),
+        );
 
         App::new()
             .app_data(web::Data::new(app_state.clone()))
@@ -96,13 +94,8 @@ async fn main() -> std::io::Result<()> {
                         web::scope("/auth")
                             .route("/register", web::post().to(auth::register))
                             .route("/login", web::post().to(auth::login))
-                            .route("/google", web::post().to(auth::google_auth))
                             .route("/logout", web::post().to(auth::logout))
-                            .route(
-                                "/me",
-                                web::get()
-                                    .to(auth::me)
-                                    .wrap(auth_middleware::AuthMiddleware),
+                            .route("/me",web::get().to(auth::me).wrap(auth_middleware::AuthMiddleware),
                             ),
                     )
                     .service(
@@ -112,15 +105,13 @@ async fn main() -> std::io::Result<()> {
                             .route("", web::post().to(videos::upload_video))
                             .route("/{id}", web::get().to(videos::get_video))
                             .route("/{id}", web::put().to(videos::update_video))
-                            .route("/{id}/stream", web::get().to(videos::stream_video))
-                            .route("/{id}/thumbnail", web::get().to(videos::get_thumbnail))
                             .route("/{id}", web::delete().to(videos::delete_video)),
                     )
                     .service(
                         web::scope("/metrics")
                             .route("/playback", web::post().to(metrics::record_playback_metric))
                             .route("/insights", web::get().to(metrics::get_metrics_insights)),
-                    ), // .route("/health", web::get().to(health::health_check))
+                    ),
             )
     })
     .bind(format!("0.0.0.0:{}", port))?

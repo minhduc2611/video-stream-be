@@ -61,14 +61,7 @@ where
             let status_code = response.status().to_string();
 
             if let Err(err) = metrics_service
-                .record_api_latency_metric(
-                    None,
-                    &path,
-                    &method,
-                    &status_code,
-                    latency_ms,
-                    None,
-                )
+                .record_api_latency_metric(None, &path, &method, &status_code, latency_ms, None)
                 .await
             {
                 log::warn!(
@@ -83,4 +76,3 @@ where
         })
     }
 }
-

@@ -229,8 +229,7 @@ impl MetricsService {
             .map(|cpu| cpu.brand().to_string())
             .filter(|brand| !brand.is_empty());
         let total_memory_bytes = Some(sys.total_memory() * 1024);
-        let boot_time =
-            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(System::boot_time()));
+        let boot_time = Some(SystemTime::UNIX_EPOCH + Duration::from_secs(System::boot_time()));
 
         Arc::new(Self {
             pool,
@@ -332,7 +331,7 @@ impl MetricsService {
                     MAX(vpm.mem_peak)::bigint AS peak_mem_bytes
                 FROM benchmark_runs br
                 LEFT JOIN video_processing_metrics vpm ON vpm.benchmark_run_id = br.id
-                WHERE br.source = 'video_processing'
+                WHERE br.source = 'video_upload'
                 GROUP BY br.id
                 ORDER BY br.started_at DESC
                 LIMIT 10
@@ -402,13 +401,10 @@ impl MetricsService {
         let mut status_map: HashMap<(String, String), Vec<ApiStatusBreakdown>> = HashMap::new();
         for row in status_rows {
             let key = (row.route.clone(), row.method.clone());
-            status_map
-                .entry(key)
-                .or_default()
-                .push(ApiStatusBreakdown {
-                    status: row.status,
-                    sample_count: row.sample_count,
-                });
+            status_map.entry(key).or_default().push(ApiStatusBreakdown {
+                status: row.status,
+                sample_count: row.sample_count,
+            });
         }
 
         for statuses in status_map.values_mut() {
@@ -439,10 +435,7 @@ impl MetricsService {
             .into_iter()
             .map(|row| {
                 let key = (row.route.clone(), row.method.clone());
-                let top_statuses = status_map
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or_default();
+                let top_statuses = status_map.get(&key).cloned().unwrap_or_default();
 
                 ApiRouteLatency {
                     route: row.route,

@@ -755,7 +755,6 @@ impl VideoProcessingServiceTrait for VideoProcessingService {
         let processing_run_id_clone = processing_run_id;
 
         tokio::spawn(async move {
-            log::info!("🎬 Starting background video processing for {}", video_id);
             let processing_video_service = Arc::clone(&video_service_clone);
             let processing_storage_service = Arc::clone(&storage_service_clone);
             let processing_metrics_service = Arc::clone(&metrics_service_clone);
